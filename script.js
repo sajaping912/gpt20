@@ -1893,6 +1893,67 @@ function handleCanvasInteraction(clientX, clientY, event) {
       activeWordTranslation = null; isActionLocked = true;
       if (currentAnswerSentenceIndex !== null) {
           window.speechSynthesis.cancel();
+
+          // --- START: 답변 문장 조동사 애니메이션 트리거 ---
+          if (currentAnswerSentence && (currentAnswerSentence.line1.trim() || currentAnswerSentence.line2.trim())) {
+              const fullAnswerText = (currentAnswerSentence.line1 + " " + currentAnswerSentence.line2).trim();
+              const wordsInAnswer = fullAnswerText.split(" ").filter(w => w.length > 0); // 빈 문자열이 있다면 제거
+
+              if (wordsInAnswer.length > 0) {
+                  let subjectEndIndex = -1; // 주어가 끝나는 단어의 인덱스 (0부터 시작)
+                  for (let i = 0; i < wordsInAnswer.length; i++) {
+                      // 동사, 조동사, V-ing, been 등이 나오기 직전까지를 주어로 간주
+                      if (isAux(wordsInAnswer[i]) ||
+                          (isVerb(wordsInAnswer[i]) && !isAux(wordsInAnswer[i])) || // 순수 동사 (조동사 형태가 아닌 경우)
+                          isVing(wordsInAnswer[i]) ||
+                          isBeen(wordsInAnswer[i])) {
+                          subjectEndIndex = i - 1;
+                          break;
+                      }
+                      // 문장 끝까지 동사/조동사 등이 안 나오면, 문장 전체가 주어이거나 (가능성 낮음)
+                      // 마지막 단어까지 주어 부분일 수 있음 (예: "The big brown fox")
+                      if (i === wordsInAnswer.length - 1) {
+                          subjectEndIndex = i;
+                      }
+                  }
+
+                  let auxWordForAnimation = null;
+                  let auxWordGlobalIndexInAnswer = -1; // 전체 답변 문장(공백제거 단어배열 기준)에서 조동사의 인덱스
+
+                  // 주어가 식별되었고 (subjectEndIndex >= 0), 주어 다음 단어가 문장 내에 존재하며, 그 단어가 조동사인 경우
+                  if (subjectEndIndex >= 0 && (subjectEndIndex + 1) < wordsInAnswer.length) {
+                      const potentialAux = wordsInAnswer[subjectEndIndex + 1];
+                      if (isAux(potentialAux)) {
+                          auxWordForAnimation = potentialAux;
+                          auxWordGlobalIndexInAnswer = subjectEndIndex + 1;
+                      }
+                  }
+
+                  if (auxWordForAnimation && auxWordGlobalIndexInAnswer !== -1) {
+                      // 화면에 그려진 단어들 중 답변 문장에 해당하는 것들을 가져와 순서대로 정렬
+                      const answerWordRectsOrdered = centerSentenceWordRects
+                          .filter(r => !r.isQuestionWord) // 답변 문장 단어만
+                          .sort((a, b) => { // 화면상 표시 순서대로 정렬 (줄 -> x좌표)
+                              if (a.lineIndex !== b.lineIndex) return a.lineIndex - b.lineIndex;
+                              return a.x - b.x;
+                          });
+
+                      // 정렬된 단어 목록에서 해당 인덱스의 wordRect가 실제 애니메이션 대상인지 확인
+                      if (answerWordRectsOrdered.length > auxWordGlobalIndexInAnswer) {
+                          const targetWordRectCandidate = answerWordRectsOrdered[auxWordGlobalIndexInAnswer];
+                          
+                          // 단어 텍스트도 일치하는지 최종 확인 (구두점 등 정제 후 비교)
+                          const candidateTextClean = targetWordRectCandidate.word.replace(/[^a-zA-Z0-9']/g, "").toLowerCase();
+                          const auxWordTextClean = auxWordForAnimation.replace(/[^a-zA-Z0-9']/g, "").toLowerCase();
+
+                          if (candidateTextClean === auxWordTextClean) {
+                              startWordWaveAnimation(targetWordRectCandidate, ctx);
+                          }
+                      }
+                  }
+              }
+          }
+          // --- END: 답변 문장 조동사 애니메이션 트리거 ---
           playSentenceAudio(currentAnswerSentenceIndex)
               .catch(err => console.error("Error playing answer sentence audio from play button:", err));
       }
