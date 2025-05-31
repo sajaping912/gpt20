@@ -1956,6 +1956,89 @@ function handleCanvasInteraction(clientX, clientY, event) {
           // --- END: 답변 문장 조동사 애니메이션 트리거 ---
           playSentenceAudio(currentAnswerSentenceIndex)
               .catch(err => console.error("Error playing answer sentence audio from play button:", err));
+
+              if (isPlayBtnAnswerTouched) { // 답변 문장 플레이 버튼 터치 시
+      showTranslationForAnswer = true; showTranslationForQuestion = false;
+      if (activeWordTranslation) activeWordTranslation.show = false;
+      if (wordTranslationTimeoutId) clearTimeout(wordTranslationTimeoutId);
+      activeWordTranslation = null; isActionLocked = true;
+
+      if (currentAnswerSentenceIndex !== null) {
+          window.speechSynthesis.cancel(); // 혹시 모를 다른 TTS 음성 중지
+
+          // 1. 오디오 재생을 먼저 시작합니다.
+          playSentenceAudio(currentAnswerSentenceIndex)
+              .catch(err => console.error("Error playing answer sentence audio from play button:", err));
+
+          // 2. 지정된 시간만큼 지연 후 조동사 애니메이션을 시작합니다.
+          const AUX_ANIMATION_DELAY = 600; // 600ms (0.6초) 지연. 이 값을 500~800 사이로 조절하여 테스트하세요.
+
+          setTimeout(() => {
+            // 지연 시간 후, 게임이 여전히 실행 중이고 일시정지가 아니며, 해당 답변 문장이 유효할 때만 애니메이션 실행
+            if (!isGameRunning || isGamePaused || !currentAnswerSentence || currentAnswerSentenceIndex === null) {
+                return;
+            }
+
+            // --- START: 기존 조동사 애니메이션 로직 ---
+            if (currentAnswerSentence.line1.trim() || currentAnswerSentence.line2.trim()) {
+                const fullAnswerText = (currentAnswerSentence.line1 + " " + currentAnswerSentence.line2).trim();
+                const wordsInAnswer = fullAnswerText.split(" ").filter(w => w.length > 0);
+
+                if (wordsInAnswer.length > 0) {
+                    let subjectEndIndex = -1;
+                    for (let i = 0; i < wordsInAnswer.length; i++) {
+                        if (isAux(wordsInAnswer[i]) ||
+                            (isVerb(wordsInAnswer[i]) && !isAux(wordsInAnswer[i])) ||
+                            isVing(wordsInAnswer[i]) ||
+                            isBeen(wordsInAnswer[i])) {
+                            subjectEndIndex = i - 1;
+                            break;
+                        }
+                        if (i === wordsInAnswer.length - 1) {
+                            subjectEndIndex = i;
+                        }
+                    }
+
+                    let auxWordForAnimation = null;
+                    let auxWordGlobalIndexInAnswer = -1;
+
+                    if (subjectEndIndex >= 0 && (subjectEndIndex + 1) < wordsInAnswer.length) {
+                        const potentialAux = wordsInAnswer[subjectEndIndex + 1];
+                        if (isAux(potentialAux)) {
+                            auxWordForAnimation = potentialAux;
+                            auxWordGlobalIndexInAnswer = subjectEndIndex + 1;
+                        }
+                    }
+
+                    if (auxWordForAnimation && auxWordGlobalIndexInAnswer !== -1) {
+                        const answerWordRectsOrdered = centerSentenceWordRects
+                            .filter(r => !r.isQuestionWord)
+                            .sort((a, b) => {
+                                if (a.lineIndex !== b.lineIndex) return a.lineIndex - b.lineIndex;
+                                return a.x - b.x;
+                            });
+
+                        if (answerWordRectsOrdered.length > auxWordGlobalIndexInAnswer) {
+                            const targetWordRectCandidate = answerWordRectsOrdered[auxWordGlobalIndexInAnswer];
+                            const candidateTextClean = targetWordRectCandidate.word.replace(/[^a-zA-Z0-9']/g, "").toLowerCase();
+                            const auxWordTextClean = auxWordForAnimation.replace(/[^a-zA-Z0-9']/g, "").toLowerCase();
+
+                            if (candidateTextClean === auxWordTextClean) {
+                                startWordWaveAnimation(targetWordRectCandidate, ctx);
+                            }
+                        }
+                    }
+                }
+            }
+            // --- END: 기존 조동사 애니메이션 로직 ---
+
+          }, AUX_ANIMATION_DELAY);
+      }
+      event.preventDefault(); 
+      // isActionLocked 해제 타이밍은 애니메이션 지연 시간과 별개로 기존 로직 유지
+      setTimeout(() => { isActionLocked = false; }, 200); 
+      return;
+    }
       }
       event.preventDefault(); setTimeout(() => { isActionLocked = false; }, 200); return;
     }
